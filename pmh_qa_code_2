@@ -1,0 +1,58 @@
+
+-- Diagnosis during perinatal period
+
+
+-- 1. QA Code 2a Diagnosis during perinatal period -- 94,844: 28/5/21 = 103,392
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2a_QA]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2a_QA]
+
+SELECT 
+a.Patient, a. GP_ID, a.regstartdate, a.regenddate, a.closedate, a.lcd, a.Peri_start, a.Birth_Date, a.Peri_1yr, a.Peri_2yr, a.Ethnicity,
+Ethnic_code, a.Birth_Event_Details, a.yob, a.Age, a.Age_Group, a.Region, a.IMD2015, a.Death, a.Record, 
+b.medcodeid AS GP_Code, b.obsdate AS Diag_Date, 
+c.medcodeid AS med_cod, c.condition, c.condition_group, c.type, c.readcode AS Readcode,
+1 AS 'token'
+INTO [Aurum_Analysis].[dbo].[LT_code2a_QA]
+FROM [Aurum_Analysis].[dbo].[LT_Final_Code3_271020] a
+LEFT JOIN [Aurum].[dbo].[Observation] b ON a.Patient = b.patid
+LEFT JOIN [Aurum_Analysis].[dbo].[base_mhc_codelist_final] c ON b.medcodeid = c.medcodeid -- base_mhc_codelist
+Where type = 'Diagnosis'
+And b.obsdate BETWEEN Peri_start AND Peri_2yr
+Order by Patient
+
+----------------------------------------------------------------------------------------------
+-- 2. Distinct cases
+
+Select DISTINCT Patient AS TotalPatients -- 23,390: 28/05/21 = 23,984
+From [Aurum_Analysis].[dbo].[LT_code2a_QA]
+
+----------------------------------------------------------------------------------------------
+-- 3. Pivot for no with diagnosis = 23,390: 28/05/21 = 23,984
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2a_QA_1]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2a_QA_1]
+Select *
+Into [Aurum_Analysis].[dbo].[LT_code2a_QA_1]
+FROM 
+(Select Patient, condition, token 
+FROM [Aurum_Analysis].[dbo].[LT_code2a_QA]) AS SourceTable
+Pivot (min(token) FOR condition IN -- Danny used sum
+([Anxiety]
+,[Bipolar Disorder]
+,[Depression]
+,[Eating Disorder]
+,[OCD]
+,[Perinatal Mental Health]
+,[Personality Disorder]
+,[Phobia]
+,[Psychosis]
+,[PTSD]
+,[Schizophrenia])) AS PivotTable  
+Order by Patient;
+
+-- QA notes
+--observation view used in DYs code, but we previously used main observation table, not view? 
+
+SELECT *
+FROM [Aurum_Analysis].[dbo].[LT_code2a_QA_1] as a
+Full Outer Join [Aurum_Analysis].[dbo].[dy_code2a_cohort_diagnosis_row_beta] as b
+ON a.Patient = b.patid;
