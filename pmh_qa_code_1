@@ -1,0 +1,199 @@
+/* THIS IS THE MAIN QA CODE FOR CODE 1 */
+
+--QA Code 1 Perinatal Project 
+--For annual year changes, change line 10, 11, 12, 68, 69, 182, 183
+--Ethnicity is general codes, however really need to use Hiral Mehta's codes, as in main code produced by Danny Y
+
+--Code1: find base cohort (395,614) Year 2016 with 2yr perinatal post birth event (reran on 28th May = 475,314)
+
+DECLARE @YEAR INT; SET @YEAR = '2016' 
+DECLARE @STUDYSTART DATE; SET @STUDYSTART = '2016-01-01' 
+DECLARE @STUDYEND DATE; SET @STUDYEND = '2016-12-31' 
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_Perinatal_QA_221020]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_Perinatal_QA_221020]
+
+Select
+	a.patid AS Patient, a.pracid AS GP_ID, a.regstartdate, a.regenddate, b.closedate, b.lcd, 
+	DATEADD(Year,-1, c.obsdate) AS 'Peri_start', c.obsdate AS 'Birth_Date', -- need to test if this should be 364 as there was crossover on date points
+	DATEADD(Year,1, c.obsdate) AS 'Peri_1yr', DATEADD(Year,2, c.obsdate) AS 'Peri_2yr',
+	ROW_NUMBER()OVER (PARTITION BY a.patid ORDER BY c.obsdate ASC) AS Preg_No, d.term AS Birth_Event_Details, 
+	a.gender, a.yob, @YEAR - a.yob AS Age,
+	CASE  
+		WHEN (@YEAR-yob) BETWEEN 15 AND 19 THEN '15-19'
+		WHEN (@YEAR-yob) BETWEEN 20 AND 24 THEN '20-24'
+		WHEN (@YEAR-yob) BETWEEN 25 AND 29 THEN '25-29'
+		WHEN (@YEAR-yob) BETWEEN 30 AND 34 THEN '30-34'
+		WHEN (@YEAR-yob) BETWEEN 35 AND 39 THEN '35-39'
+		WHEN (@YEAR-yob) BETWEEN 40 AND 44 THEN '40-44'
+		WHEN (@YEAR-yob) >=45 THEN '45+' 
+		ELSE 'NA' 
+		END AS Age_Group,
+	e.Description AS Region, f.imd2015_10 AS IMD2015, a.cprd_ddate AS Death, c.medcodeid AS Pregcode
+
+INTO [Aurum_Analysis].[dbo].[LT_Perinatal_QA_221020]
+From [Aurum].[dbo].[Patient] AS a
+	LEFT JOIN [Aurum].[dbo].[Practice] AS b ON a.pracid = b.pracid
+	LEFT JOIN [Aurum].[dbo].[Observation] AS c ON a.patid = c.patid 
+	LEFT JOIN [Aurum_Analysis].[dbo].[po_codelist] AS d ON c.medcodeid = d.medcodeid 
+	--LEFT JOIN  [Aurum_Analysis].[dbo].[LT_BirthEvent] AS d ON c.medcodeid = d.medcodeid
+	LEFT JOIN [Aurum].[dbo].[lkpRegion] AS e ON b.region = e.regionid
+	LEFT JOIN [Aurum].[dbo].[lkpPatientIMD_2020_07] AS f ON a.patid = f.patid
+	
+WHERE 
+	d.code_type IN ('Delivery')
+	AND c.obsdate BETWEEN @STUDYSTART AND @STUDYEND
+	AND @YEAR - yob BETWEEN 15 AND 55
+	AND a.acceptable = 1
+	AND a.gender = 2
+	AND a.patienttypeid = 3
+	AND b.region NOT IN ('11','12','13') AND b.region IS NOT NULL 
+	ORDER BY a.patid;
+-----------------------------------------------------------------------------------------------------------------
+
+--Code 2: refine base cohort (132,281) Registration start dates: 159,107
+
+--IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_Perinatal_QA1_221020]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_Perinatal_QA1_221020]
+
+Select *,
+	CASE  
+		WHEN regstartdate > Peri_start THEN 'Partial'
+		WHEN regstartdate <= Peri_start THEN 'Full'
+		ELSE 'NA' 
+		END AS Record
+--INTO [Aurum_Analysis].[dbo].[LT_Perinatal_QA1_221020]
+FROM [Aurum_Analysis].[dbo].[LT_Perinatal_QA_221020]
+WHERE 
+	Preg_No = 1
+	And (regenddate >= Peri_2yr OR regenddate IS NULL) -- amend
+	And (closedate > Peri_2yr OR closedate IS NULL); -- amend
+	
+----------------------------------------------------------------------------------------------------------------------
+
+--Code 3: Take base cohort, and link to ethnic readcode and calculate nearest ethnicity record to birth event (258,426):Reran 28/5/21 = 315,004
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_Ethnic_QA_221020]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_Ethnic_QA_221020]
+
+SELECT b.patid, Birth_Date, c.term AS Ethnicity, c.readcode As Ethnic_code, b.obsdate AS Eth_date,
+abs(DATEDIFF(day, Birth_Date, b.obsdate)) AS DateDiff
+INTO [Aurum_Analysis].[dbo].[LT_Ethnic_QA_221020]
+FROM [Aurum_Analysis].[dbo].[LT_Perinatal_QA1_221020] AS a
+	LEFT JOIN [Aurum].[dbo].[Observation] AS b ON Patient = b.patid 
+	LEFT JOIN [Aurum].[dbo].[ClinicalCode] AS c ON b.medcodeid = c.medcodeid 
+WHERE -- use Hirals ethnicity list next time, as this is better, uses below but takes out some that are not relevant
+readcode LIKE '9i%' 
+OR readcode LIKE '9S%' 
+OR readcode LIKE '9t%' 
+OR readcode LIKE '9T%' 
+OR readcode LIKE '134%' 
+OR readcode LIKE '226%'
+Order by b.patid;
+
+--------------------------------------------------------------------------------------------------------------------------
+
+--Code 4: order nearest ethnicity record by nearest date (258,426): Reran 28/5/21 = 315,004
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_Ethnic_QA1_221020]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_Ethnic_QA1_221020]
+
+SELECT patid, Birth_Date, Ethnicity, Ethnic_code, DateDiff, Eth_date,
+ROW_NUMBER()OVER (PARTITION BY patid ORDER BY DateDiff ASC) AS Eth_No
+INTO [Aurum_Analysis].[dbo].[LT_Ethnic_QA1_221020]
+FROM [Aurum_Analysis].[dbo].[LT_Ethnic_QA_221020]
+Order by patid;
+
+-------------------------------------------------------------------------------------------------------------------------
+
+--Code 5a: select nearest ethnicity to birth event (117,852):Reran 28/5/21 = 142,359
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_Ethnic_QA2_221020]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_Ethnic_QA2_221020]
+
+SELECT patid, Birth_Date, Ethnicity, Ethnic_code, DateDiff, Eth_date
+INTO [Aurum_Analysis].[dbo].[LT_Ethnic_QA2_221020]
+FROM [Aurum_Analysis].[dbo].[LT_Ethnic_QA1_221020]
+WHERE Eth_No = 1
+Order by patid;
+
+---------------------------------------------------------------------------------------------------------------------------
+
+--Code 5b: merge base cohort data with ethnicity data (132,281): Reran 28/5/21 = 159,107
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_Final_Code1_221020]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_Final_Code1_221020]
+
+Select Patient, GP_ID, regstartdate, regenddate, a.closedate, a.lcd, Peri_start, a.Birth_Date, Peri_1yr, Peri_2yr, Ethnicity, Ethnic_code, 
+Birth_Event_Details, yob, Age, Age_Group, Region, IMD2015, Death, Record
+INTO [Aurum_Analysis].[dbo].[LT_Final_Code1_221020]
+FROM [Aurum_Analysis].[dbo].[LT_Perinatal_QA1_221020] As a
+LEFT JOIN [Aurum_Analysis].[dbo].[LT_Ethnic_QA2_221020] As b ON Patient = patid
+Order by Patient;
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+--Code 6: find minimum observation date (132,281): 28/5/21 = 159,107
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_Final_Code2_271020]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_Final_Code2_271020]
+
+Select a.Patient, 
+--a.GP_ID, a.regstartdate, a.regenddate, a.closedate, a.Peri_start, a.Birth_Date, a.Peri_1yr, a.Peri_2yr, a.Ethnicity, a.Ethnic_code, 
+--a.Birth_Type, a.Birth_Event_Details, a.yob, a.Age, a.Age_Group, a.Region, a.IMD2015, a.Death, a.Record,
+--c.patid, c.medcodeid
+MIN(c.obsdate) AS firstobs 
+
+INTO [Aurum_Analysis].[dbo].[LT_Final_Code2_271020]
+FROM [Aurum_Analysis].[dbo].[LT_Final_Code1_221020] As a
+LEFT JOIN [Aurum].[dbo].[Observation] AS c
+ON a.Patient = c.patid 
+Group by a.Patient
+Order by a.Patient;
+
+------------------------------------------------------------------------------------------------------------------------------------
+
+--Code 7a: find minimum issue date (132,281): 28/5/21 = 159,116
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_Final_Code2a_271020]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_Final_Code2a_271020]
+Select a.Patient,
+Min(b.issuedate) AS firstissue
+
+INTO [Aurum_Analysis].[dbo].[LT_Final_Code2a_271020]
+FROM [Aurum_Analysis].[dbo].[LT_Final_Code1_221020] As a
+LEFT JOIN [Aurum].[dbo].[DrugIssue] AS b
+ON a.Patient = b.patid 
+Group by a.Patient
+Order by a.Patient;
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+--Code 7b: join min observation date to main cohort (112,422): 28/5/21 = 132,495 (132476)
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_Final_Code3_271020]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_Final_Code3_271020]
+
+Select a.Patient, a. GP_ID, a.regstartdate, a.regenddate, a.closedate, a.lcd, a.Peri_start, a.Birth_Date, a.Peri_1yr, a.Peri_2yr, a.Ethnicity,
+Ethnic_code, a.Birth_Event_Details, a.yob, a.Age, a.Age_Group, a.Region, a.IMD2015, a.Death, a.Record, 
+--b.Patient, 
+b.firstobs, c.firstissue
+
+INTO [Aurum_Analysis].[dbo].[LT_Final_Code3_271020]
+FROM [Aurum_Analysis].[dbo].[LT_Final_Code1_221020] As a
+LEFT JOIN [Aurum_Analysis].[dbo].[LT_Final_Code2_271020] As b ON a.Patient = b.Patient
+LEFT JOIN [Aurum_Analysis].[dbo].[LT_Final_Code2a_271020] AS c ON a.Patient = c.Patient
+
+Where 
+((record = 'Full') OR (record = 'Partial' AND b.firstobs <= Peri_start OR c.firstissue <= Peri_start))
+And regstartdate <= Peri_2yr -- amend
+AND lcd >= Peri_2yr -- amend
+Order by a.Patient;
+
+-------------------------------------------------------------------
+
+-- Output check - Full join with DYs final output on patient ids (28/5/21 = match)
+
+SELECT *,
+a.Patient, b.patid
+FROM [Aurum_Analysis].[dbo].[LT_Final_Code3_271020] as a
+Full Outer Join [Aurum_Analysis].[dbo].[dy_code1_po_cohort_inc_final_beta] as b
+ON a.Patient = b.patid;
+
+----------------------
+-- Old numbers superseded by newer code
+-- 2016 1yr = 113,106
+-- 2016 2yr = 112,384
+-- 2017 1yr = 111,838
+-- 2017 2yr = 110,576
