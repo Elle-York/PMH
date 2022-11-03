@@ -1,0 +1,62 @@
+
+-- Historical Diagnosis SMI
+
+-- 1. Find all women not in code 2a/2b/2c/2d = 4th June '21 = 99608
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2d_QA]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2d_QA]
+SELECT *, 
+DATEADD(YEAR,-([Age]-14),[Peri_start]) AS 'yr_limit', -- Find no of yrs between age 14 and current age, subtract diff from peri start
+'2004-04-01' AS 'qof_limit' -- clean data line
+INTO [Aurum_Analysis].[dbo].[LT_code2d_QA]
+FROM [Aurum_Analysis].[dbo ].[LT_Final_Code3_271020] -- code 1
+Where Patient NOT IN (SELECT Patient FROM [Aurum_Analysis].[dbo].[LT_code2a_QA_1]) -- code 2a 
+AND Patient NOT IN (SELECT Patient FROM [Aurum_Analysis].[dbo].[LT_code2b_QA_c]) -- code 2b
+AND Patient NOT IN (Select Patient FROM [Aurum_Analysis].[dbo].[LT_code2c_QA_d])-- code 2c symp
+AND Patient NOT IN (Select Patient FROM [Aurum_Analysis].[dbo].[LT_code2c_Med_QA_d]) -- code 2c med
+Order by Patient
+
+
+------------------------------------------------------------------------------------------
+
+-- 2. Find all women with historical SMI diagnosis after age 14 and before peri start 4th June = 147
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2d_QA_1]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2d_QA_1]
+SELECT a.Patient,a.Age, a.Age_Group, a.yob, a.yr_limit, a.qof_limit, a.Peri_Start, a.Peri_2yr,
+b.medcodeid AS GP_Code, b.obsdate AS Diag_Date, 
+c.medcodeid AS med_cod, c.condition, c.condition_group, c.type, c.readcode AS Readcode,
+1 AS 'token'
+INTO [Aurum_Analysis].[dbo].[LT_code2d_QA_1]
+FROM [Aurum_Analysis].[dbo].[LT_code2d_QA] AS a
+LEFT JOIN [Aurum].[dbo].[Observation] AS b ON a.Patient = b.patid
+LEFT JOIN [Aurum_Analysis].[dbo].[base_mhc_codelist_final] AS c ON b.medcodeid = c.medcodeid 
+Where type = 'Diagnosis'
+AND condition_group = 'SMI'
+AND b.obsdate >= qof_limit
+AND (b.obsdate >= yr_limit 
+AND b.obsdate < Peri_start)
+Order by Patient
+
+--------------------------------------------------------------------------------
+-- 3. No. of women with SMI = 48 (4th June, '21)
+
+Select DISTINCT Patient AS TotalPatients 
+From [Aurum_Analysis].[dbo].[LT_code2d_QA_1]
+
+----------------------------------------------------------------------------------------------------------
+
+-- 4. Historical Diagnosis Pivot 4th June = 48
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2d_QA_2]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2d_QA_2]
+
+Select *
+INTO [Aurum_Analysis].[dbo].[LT_code2d_QA_2]
+FROM 
+(Select Patient, condition, token 
+FROM [Aurum_Analysis].[dbo].[LT_code2d_QA_1]) AS SourceTable
+Pivot (min(token) FOR condition IN 
+([Bipolar Disorder] 
+,[Perinatal Mental Health] -- how is this counting SMI or CMHD?
+,[Psychosis] 
+,[Schizophrenia])) 
+AS PivotTable  
+Order by Patient;
