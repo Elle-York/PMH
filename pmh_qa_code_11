@@ -1,0 +1,25 @@
+
+-- Full list of mental health drugs based on traditional BNF chapters
+
+SELECT Distinct chemical_substance_bnf, drug_paid, vtm_name
+FROM [Prescriptions].[dbo].[vPrescription_Data]
+WHERE
+--0401 -  HYPNOTICS AND ANXIOLYTICS
+	chemical_substance_bnf LIKE '0401010%' OR -- Hypnotics
+	chemical_substance_bnf LIKE '0401020%' OR -- Anxiolytics
+	chemical_substance_bnf LIKE '0401030%' OR -- Barbiturates
+--0402 -  DRUGS USED IN PSYCHOSES & RELATED DISORDERS
+	chemical_substance_bnf LIKE '0402010%' OR -- Antipsychotics drugs
+	chemical_substance_bnf LIKE '0402020%' OR -- Antipsychotic injections
+	chemical_substance_bnf LIKE '0402030%' OR -- Antimanic/hypomania drugs
+--0403 -  ANTIDEPRESSANT DRUGS
+	chemical_substance_bnf LIKE '0403010%' OR -- Tricyclic & Related antidepressant
+	chemical_substance_bnf LIKE '0403020%' OR -- Monamine-oxidase inhibitor
+	chemical_substance_bnf LIKE '0403030%' OR -- Selective serotonin re-uptake inhibitor
+	chemical_substance_bnf LIKE '0403040%'    -- Other antidepressant drugs
+Order by chemical_substance_bnf;
+
+----------------------------------------------------
+--sex = 2 
+--AND pat_age BETWEEN 15 AND 55
+--AND Year = 2016
