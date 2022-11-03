@@ -1,0 +1,42 @@
+
+-- 1. Find all remaining cases where patient has symptom in perinatal period (6,580)
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_Lost_Group_Symp]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_Lost_Group_Symp]
+
+Select *
+--INTO [Aurum_Analysis].[dbo].[LT_Lost_Group_Symp]
+From [Aurum_Analysis].[dbo].[LT_Final_Code3_271020] AS a
+LEFT JOIN [Aurum].[dbo].[Observation] AS b ON a.Patient = b.patid
+LEFT JOIN [Aurum_Analysis].[dbo].[base_mhc_codelist]AS c ON b.medcodeid = c.medcodeid
+Where 
+Patient NOT IN (SELECT Patient FROM [Aurum_Analysis].[dbo].[LT_code2a_QA_1]) -- code 2a 
+AND Patient NOT IN (SELECT Patient FROM [Aurum_Analysis].[dbo].[LT_code2b_QA_c]) -- code 2b
+AND Patient NOT IN (Select Patient FROM [Aurum_Analysis].[dbo].[LT_code2c_QA_d]) -- code 2c symp
+AND Patient NOT IN (Select Patient FROM [Aurum_Analysis].[dbo].[LT_code2c_Med_QA_d])-- code 2c med
+AND type = 'Symptom'
+And b.obsdate BETWEEN Peri_start AND Peri_2yr
+Order by Patient
+
+-- 2. Find all remaining cases where patient has medication in perinatal period (6094)
+
+--IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_Lost_Group_Med]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_Lost_Group_Med]
+
+Select *
+--INTO [Aurum_Analysis].[dbo].[LT_Lost_Group_Med]
+From [Aurum_Analysis].[dbo].[LT_Final_Code3_271020] AS a
+LEFT JOIN [Aurum].[dbo].[DrugIssue] b ON a.Patient = b.patid 
+LEFT JOIN [Aurum].[dbo].[DrugCode] c ON c.prodcodeid = b.prodcodeid
+LEFT JOIN [Aurum_Analysis].[dbo].[drug_codelist_pivot] d ON d.prodcodeid = b.prodcodeid
+Where 
+Patient NOT IN (SELECT Patient FROM [Aurum_Analysis].[dbo].[LT_code2a_QA_1]) -- code 2a 
+AND Patient NOT IN (SELECT Patient FROM [Aurum_Analysis].[dbo].[LT_code2b_QA_c]) -- code 2b
+AND Patient NOT IN (Select Patient FROM [Aurum_Analysis].[dbo].[LT_code2c_QA_d]) -- code 2c symp
+AND Patient NOT IN (Select Patient FROM [Aurum_Analysis].[dbo].[LT_code2c_Med_QA_d]) -- code 2c med
+AND Patient NOT IN (Select Patient FROM [Aurum_Analysis].[dbo].[LT_Lost_Group_Symp]) -- code lost symp
+AND d.prodcodeid IS NOT NULL
+AND issuedate BETWEEN Peri_start AND Peri_2yr 
+AND SMI = 1
+Order by Patient
+
+
+Order by Patient, Diag_Date, issuedate;
