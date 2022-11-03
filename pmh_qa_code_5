@@ -1,0 +1,111 @@
+-- Historical Diagnosis and symptom in perinatal period
+
+-- 1. Find all women not in code 2a or code 2b cohort (85,529): 2nd June 21 = 104,252
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2c_QA]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2c_QA]
+SELECT *, 
+DATEADD(YEAR,-([Age]-14),[Peri_start]) AS 'yr_limit', -- Find no of yrs between age 14 and current age, subtract diff from peri start
+'2004-04-01' AS 'qof_limit' -- clean data line
+INTO [Aurum_Analysis].[dbo].[LT_code2c_QA]
+FROM [Aurum_Analysis].[dbo ].[LT_Final_Code3_271020] -- code 1
+Where Patient NOT IN (SELECT Patient FROM [Aurum_Analysis].[dbo].[LT_code2a_QA_1]) -- code 2a 
+AND Patient NOT IN (SELECT Patient FROM [Aurum_Analysis].[dbo].[LT_code2b_QA_c]) -- code 2b 
+Order by Patient
+
+------------------------------------------------------------------------------------------
+
+-- 2. Find all women with historical diagnosis after age 14 and before peri start (56,653): 2nd June 21 = 51,329
+-- Make sure includes 2004 limit
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2c_QA_a]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2c_QA_a]
+
+SELECT a.Patient,a.Age, a.Age_Group, a.yob, a.yr_limit, a.qof_limit, a.Peri_Start, a.Peri_2yr,
+b.medcodeid AS GP_Code, b.obsdate AS Diag_Date, 
+c.medcodeid AS med_cod, c.condition, c.condition_group, c.type, c.readcode AS Readcode,
+1 AS 'token'
+INTO [Aurum_Analysis].[dbo].[LT_code2c_QA_a]
+FROM [Aurum_Analysis].[dbo].[LT_code2c_QA] AS a
+LEFT JOIN [Aurum].[dbo].[Observation] AS b ON a.Patient = b.patid
+LEFT JOIN [Aurum_Analysis].[dbo].[base_mhc_codelist_final] AS c ON b.medcodeid = c.medcodeid 
+Where type = 'Diagnosis'
+AND b.obsdate >= qof_limit
+AND (b.obsdate >= yr_limit 
+AND b.obsdate < Peri_start)
+Order by Patient
+
+--------------------------------------------------------------------------------
+-- 3a. No. of women with historical diagnosis (18,029): 3rd June '21 = 15,160
+
+Select DISTINCT Patient AS TotalPatients 
+From [Aurum_Analysis].[dbo].[LT_code2c_QA_a]
+
+----------------------------------------------------------------------------------------------------------
+
+-- 3b. Identifying women with a symptom in perinatal period (13,648): 3rd June '21 = 13,401
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2c_QA_b]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2c_QA_b]
+
+SELECT a.Patient, a.Age, a.Age_Group, a.yob, a.yr_limit, a.Peri_Start, a.Peri_2yr, a.Diag_Date, a.condition AS Diag, a.condition_group AS Diag_Group, a.Readcode, a.token, 
+b.obsdate AS symp_date, c.condition AS Symp, c.condition_group AS Symp_Group,
+CASE  
+	WHEN a.condition = 'Anxiety' AND c.condition = 'Anxiety' THEN 'Y' -- check names haven't changed in new dataset
+	WHEN a.condition = 'Bipolar Disorder' THEN 'Y'
+	WHEN a.condition = 'Depression' AND c.condition = 'Depression' THEN 'Y'
+	WHEN a.condition = 'Eating Disorder' AND c.condition = 'Eating Disorder' THEN 'Y'
+	WHEN a.condition = 'OCD' AND c.condition = 'OCD' THEN 'Y'
+	WHEN a.condition = 'Perinatal Mental Health' AND c.condition = 'Perinatal Mental Health' THEN 'Y'
+	WHEN a.condition = 'Personality Disorder' AND c.condition = 'Personality Disorder' THEN 'Y' 
+	WHEN a.condition = 'Phobia' AND c.condition = 'Phobia' THEN 'Y'
+	WHEN a.condition = 'Psychosis' THEN 'Y'
+	WHEN a.condition = 'PTSD' AND c.condition = 'PTSD' THEN 'Y'
+	WHEN a.condition = 'Schizophrenia' THEN 'Y'
+	ELSE 'NA' 
+	END AS Accept
+INTO [Aurum_Analysis].[dbo].[LT_code2c_QA_b]
+FROM [Aurum_Analysis].[dbo].[LT_code2c_QA_a] AS a
+LEFT JOIN [Aurum].[dbo].[Observation] AS b ON a.Patient = b.patid
+LEFT JOIN [Aurum_Analysis].[dbo].[base_mhc_codelist_final]AS c ON b.medcodeid = c.medcodeid
+Where c.type = 'Symptom'
+And b.obsdate BETWEEN Peri_start AND Peri_2yr
+Order by Patient, Diag_Date
+
+	
+-----------------------------------------------------------------------------------------------------------
+-- 4. Find all women with matching codes (6,279): 3rd June = 6,555
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2c_QA_c]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2c_QA_c]
+
+Select * 
+INTO [Aurum_Analysis].[dbo].[LT_code2c_QA_c]
+FROM [Aurum_Analysis].[dbo].[LT_code2c_QA_b]
+WHERE Accept = 'Y'
+
+
+Select DISTINCT Patient AS TotalPatients -- 1160
+From [Aurum_Analysis].[dbo].[LT_code2c_QA_c]
+
+----------------------------------------------------------------------------------------------------------
+
+-- 5. Historical Diagnosis Pivot (1,096): 3rd June = 1,160
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2c_QA_d]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2c_QA_d]
+
+Select *
+INTO [Aurum_Analysis].[dbo].[LT_code2c_QA_d]
+FROM 
+(Select Patient, Diag, token -- condition = diag? 
+FROM [Aurum_Analysis].[dbo].[LT_code2c_QA_c]) AS SourceTable
+Pivot (min(token) FOR Diag IN -- condition = diag?
+([Anxiety] 
+,[Bipolar Disorder] 
+,[Depression] 
+,[Eating Disorder] 
+,[OCD] 
+,[Perinatal Mental Health] 
+,[Personality Disorder] 
+,[Phobia] 
+,[Psychosis] 
+,[PTSD] 
+,[Schizophrenia])) 
+AS PivotTable  
+Order by Patient;
