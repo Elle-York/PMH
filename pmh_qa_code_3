@@ -1,0 +1,110 @@
+
+-- Symptom and relevant medication in perinatal period
+
+-- 1. Find all patients with no readcode for diagnosis in perinatal period AND has symptom readcode (26,712): 28/5/21 = 33,701
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2b_QA]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2b_QA]
+
+SELECT a.Patient, a.GP_ID, a.regstartdate, a.regenddate, a.closedate, a.lcd, a.Peri_start, a.Birth_Date, a.Peri_1yr, a.Peri_2yr, 
+a.Birth_Event_Details, a.yob, a.Age, a.Age_Group, a.Region, a.IMD2015, a.Death, a.Record,
+b.medcodeid AS GP_Code, b.obsdate AS Diag_Date, 
+c.medcodeid AS med_cod, c.condition, c.condition_group, c.type, c.readcode AS Readcode
+INTO [Aurum_Analysis].[dbo].[LT_code2b_QA]
+FROM [Aurum_Analysis].[dbo].[LT_Final_Code3_271020] AS a
+LEFT JOIN [Aurum].[dbo].[Observation] b ON a.Patient = b.patid
+LEFT JOIN [Aurum_Analysis].[dbo].[base_mhc_codelist_final] c ON b.medcodeid = c.medcodeid
+Where 
+Patient NOT IN (SELECT Patient FROM [Aurum_Analysis].[dbo].[LT_code2a_QA_1]) -- code 2a
+AND type = 'Symptom'
+And b.obsdate BETWEEN Peri_start AND Peri_2yr
+Order by Patient, Diag_Date;
+
+-----------------------------------------------------------------------------------
+
+-- 1a Distinct patients (12,199): 28/5/21 = 15,735 with no diagnosis of MH, but do have a symptom of MH
+
+Select DISTINCT Patient AS TotalPatients -- have MH symptom during perinatal period
+From [Aurum_Analysis].[dbo].[LT_code2b_QA];
+		
+------------------------------------------------------------------------------------
+
+-- 2. Find all patients with meds in perinatal period (22,868)
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2b_QA_a]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2b_QA_a]
+
+Select Distinct Patient, Diag_Date, condition, condition_group, issuedate, Anxiety, Bipolar_Disorder, Depression, 
+Eating_Disorder, Obsessive_Compulsive_Disorder, Personality_Disorder, Perinatal_Mental_Health, Phobia, Psychosis, PTSD, Schizophrenia,
+1 AS 'token',
+CASE  
+		WHEN condition = 'Anxiety' AND (Anxiety = 1 OR Depression = 1) THEN 'Y'
+		WHEN condition = 'Bipolar Disorder' AND  Bipolar_Disorder = 1 THEN 'Y'
+		WHEN condition = 'Depression' AND (Depression = 1 OR Anxiety = 1) THEN 'Y'
+		WHEN condition = 'Eating Disorder' AND  Eating_Disorder = 1 THEN 'Y'
+		WHEN condition = 'OCD' AND (Obsessive_Compulsive_Disorder = 1 OR Anxiety = 1 OR Depression = 1) THEN 'Y'
+		WHEN condition = 'Perinatal Mental Health' AND condition_group = 'CMHD' AND  (Anxiety = 1 OR Depression = 1) THEN 'Y'
+		WHEN condition = 'Perinatal Mental Health' AND condition_group = 'SMI' AND  Psychosis = 1 THEN 'Y'
+		--personality disorder currently excluded as no matching meds
+		WHEN condition = 'Phobia' AND (Phobia = 1 OR Anxiety = 1 OR Depression = 1) THEN 'Y'
+		WHEN condition = 'Psychosis' AND  Psychosis = 1 THEN 'Y'
+		WHEN condition = 'PTSD' AND (PTSD = 1 OR Anxiety = 1 OR Depression = 1) THEN 'Y'
+		WHEN condition = 'Schizophrenia' AND  Schizophrenia = 1 THEN 'Y'
+		ELSE 'NA' 
+		END AS Accept
+INTO [Aurum_Analysis].[dbo].[LT_code2b_QA_a]
+FROM [Aurum_Analysis].[dbo].[LT_code2b_QA] AS a
+LEFT JOIN [Aurum].[dbo].[DrugIssue] d ON a.Patient = d.patid 
+LEFT JOIN [Aurum].[dbo].[DrugCode] e ON e.prodcodeid = d.prodcodeid
+LEFT JOIN [Aurum_Analysis].[dbo].[drug_codelist_pivot_v2] f ON f.prodcodeid = d.prodcodeid
+WHERE f.prodcodeid IS NOT NULL
+AND issuedate BETWEEN Peri_start AND DATEADD(MONTH,3,Peri_2yr)
+AND (DATEDIFF(DAY, Diag_Date, issuedate)) BETWEEN 0 AND 90 
+AND issuedate >= Diag_Date
+Order by Patient, Diag_Date, issuedate;
+
+--------------------------------------------------------------------------------------
+
+-- 3. Select patients who have a symptom and relevant medication in perinatal period = 22,485
+
+--IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2b_QA_b]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2b_QA_b]
+Select * 
+--INTO [Aurum_Analysis].[dbo].[LT_code2b_QA_b]
+FROM [Aurum_Analysis].[dbo].[LT_code2b_QA_a]
+WHERE Accept = 'Y'
+
+----------------------------------------------------------------------------------------
+
+-- 3a. Distinct patients - MH symptom and MH meds in perinatal period (3,503): 02/06/21 = 4,271
+
+Select DISTINCT Patient AS TotalPatients 
+From [Aurum_Analysis].[dbo].[LT_code2b_QA_b]
+
+---------------------------------------------------------------------------------------
+
+-- 4. Pivot on symptoms (3,503): 02/06/21 = 4,271
+
+IF OBJECT_ID('[Aurum_Analysis].[dbo].[LT_code2b_QA_c]') IS NOT NULL DROP TABLE [Aurum_Analysis].[dbo].[LT_code2b_QA_c] 
+Select *
+Into [Aurum_Analysis].[dbo].[LT_code2b_QA_c]
+FROM 
+(Select Patient, condition, token 
+FROM [Aurum_Analysis].[dbo].[LT_code2b_QA_b]) AS SourceTable
+Pivot (min(token) FOR condition IN 
+([Anxiety] 
+,[Bipolar Disorder] 
+,[Depression] 
+,[Eating Disorder] 
+,[OCD] 
+,[Perinatal Mental Health] 
+,[Personality Disorder] 
+,[Phobia] 
+,[Psychosis] 
+,[PTSD] 
+,[Schizophrenia])) 
+AS PivotTable  
+Order by Patient;
+
+------------------------------------------------------------------------------
+
+
+
+
