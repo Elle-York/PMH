@@ -1,0 +1,47 @@
+/****** Script for SelectTopNRows command from SSMS  ******/
+
+-- SMI test IMD 
+
+Select *
+--From  [Aurum_Analysis].[dbo].[HM_SMIPD_Denominatorpatients_withIMD_ID02012020] As a -- denominator
+From [Aurum_Analysis].[dbo].[HM_SMIPD_Patients_withIMD_ID02012020] As a -- numerator
+LEFT JOIN [Aurum].[dbo].[lkpPatientIMD_2020_07] AS b ON a.patid = b.patid -- IMD file
+Where 
+(a.imd2015_10 is null and b.imd2015_10 is not null)
+or
+(a.imd2015_10 is not null and b.imd2015_10 is null)-- (null values changed to 0 but does not affect outcome)
+or
+(a.imd2015_10 = '0' and b.imd2015_10 != '0')
+or
+(a.imd2015_10 != '0' and b.imd2015_10 = '0')
+
+-- Birth Cohort Perinatal IMD
+
+Select *
+
+From [Aurum_Analysis].[dbo].[LT_Perinatal_QA_221020] As a -- birth cohort
+LEFT JOIN [Aurum].[dbo].[lkpPatientIMD_2020_07] -- IMD file
+AS b ON a.Patient = b.patid
+Where 
+(a.IMD2015 is null and b.imd2015_10 is not null)
+or
+(a.IMD2015 is not null and b.imd2015_10 is null)
+or
+(a.IMD2015 = '0' and b.imd2015_10 != '0')
+or
+(a.IMD2015 != '0' and b.imd2015_10 = '0');
+
+-- Final Cohort perinatal IMD
+
+Select *
+From [Aurum_Analysis].[dbo].[dy_code3_cohort_final_case_beta] As a -- birth cohort
+LEFT JOIN [Aurum].[dbo].[lkpPatientIMD_2020_07] -- IMD file
+AS b ON a.patid = b.patid
+Where 
+(a.imd2015_10 is null and b.imd2015_10 is not null)
+or
+(a.imd2015_10 is not null and b.imd2015_10 is null)
+or
+(a.imd2015_10 = '0' and b.imd2015_10 != '0')
+or
+(a.imd2015_10 != '0' and b.imd2015_10 = '0')
